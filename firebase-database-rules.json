@@ -1,0 +1,20 @@
+{
+  "rules": {
+    "players": {
+      ".read": true,
+      ".write": true,
+      "$playerId": {
+        ".validate": "newData.hasChildren(['username', 'x', 'y', 'z'])"
+      }
+    },
+    "chat": {
+      ".read": true,
+      ".write": true,
+      ".indexOn": ["timestamp"]
+    },
+    "playerData": {
+      ".read": true,
+      ".write": true
+    }
+  }
+}

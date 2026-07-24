@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vie Virtuelle — Monde Ouvert 3D</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- Écran de connexion -->
+  <div id="login-screen">
+    <div class="login-box">
+      <h1>Vie Virtuelle</h1>
+      <p>Choisis ton pseudo pour entrer dans le monde</p>
+      <input id="username-input" type="text" placeholder="Ton pseudo" maxlength="16" />
+      <button id="join-btn">Entrer dans le monde</button>
+      <p class="hint">Z Q S D pour bouger · souris pour la caméra · E pour interagir</p>
+    </div>
+  </div>
+
+  <!-- HUD en jeu -->
+  <div id="hud" class="hidden">
+    <div id="top-bar">
+      <div id="player-count">Joueurs connectés : 1</div>
+      <div id="money-display">💰 0 €</div>
+      <div id="wanted-display"></div>
+    </div>
+
+    <div id="minimap-wrapper">
+      <canvas id="minimap-canvas" width="160" height="160"></canvas>
+    </div>
+
+    <div id="interaction-prompt" class="hidden"></div>
+    <div id="mission-banner" class="hidden"></div>
+
+    <div id="controls-hint">
+      Z Q S D : marcher/conduire &nbsp;·&nbsp; E : interagir / monter-descendre &nbsp;·&nbsp; Souris : caméra &nbsp;·&nbsp; Molette : zoom
+    </div>
+
+    <div id="chat-box">
+      <div id="chat-messages"></div>
+      <input id="chat-input" type="text" placeholder="Écris un message et appuie sur Entrée..." />
+    </div>
+  </div>
+
+  <!-- Modal boutique -->
+  <div id="shop-modal" class="hidden">
+    <div class="shop-box">
+      <div class="shop-header">
+        <h2>🛍️ Boutique</h2>
+        <button id="shop-close-btn">✕</button>
+      </div>
+      <div id="shop-items"></div>
+    </div>
+  </div>
+
+  <canvas id="game-canvas"></canvas>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+
+  <script src="js/firebase-config.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
