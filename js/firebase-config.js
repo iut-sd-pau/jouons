@@ -8,13 +8,14 @@
 // ============================================================
 
 const firebaseConfig = {
-  apiKey: "REMPLACE_MOI",
-  authDomain: "REMPLACE_MOI.firebaseapp.com",
-  databaseURL: "https://REMPLACE_MOI-default-rtdb.firebaseio.com",
-  projectId: "REMPLACE_MOI",
-  storageBucket: "REMPLACE_MOI.appspot.com",
-  messagingSenderId: "REMPLACE_MOI",
-  appId: "REMPLACE_MOI"
+  apiKey: "AIzaSyDIVze3XJ3OY8OvQc_ekpf2uxPnD-B2mxQ",
+  authDomain: "jouons-ba9fe.firebaseapp.com",
+  databaseURL: "https://jouons-ba9fe-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "jouons-ba9fe",
+  storageBucket: "jouons-ba9fe.firebasestorage.app",
+  messagingSenderId: "1003832351346",
+  appId: "1:1003832351346:web:6eb5550a066ca389c480eb",
+  measurementId: "G-EXYB9K44DF"
 };
 
 firebase.initializeApp(firebaseConfig);
