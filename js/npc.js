@@ -4,18 +4,24 @@ import * as THREE from "three";
 // PERSONNAGES NON-JOUEURS (NPC)
 // ============================================================
 
-const NPC_COLORS = [0x9d4edd, 0xffb703, 0x06d6a0, 0xef476f, 0x118ab2];
+const NPC_COLORS = [0x9d4edd, 0xffb703, 0x06d6a0, 0xef476f, 0x118ab2, 0xf72585, 0x4cc9f0, 0x80ed99];
+const PEDESTRIAN_LINES = [
+  "Belle journée non ?", "J'ai pas le temps, désolé...", "Tu viens du quartier ?",
+  "Fais attention en conduisant !", "J'ai entendu dire qu'il y a une école par là.",
+  "La boutique a de nouveaux articles !"
+];
 
 export class NPC {
   constructor(scene, position, role = "pedestrian") {
     this.scene = scene;
-    this.role = role; // "pedestrian" | "job_giver" | "shopkeeper"
+    this.role = role; // "pedestrian" | "job_giver" | "shopkeeper" | "passenger" | "teacher"
     this.state = "idle";
     this.wanderTarget = new THREE.Vector3().copy(position);
     this.wanderTimer = 0;
     this.speed = 1.2 + Math.random() * 0.8;
     this.knockedDown = false;
     this.knockedTimer = 0;
+    this.talkCooldown = Math.random() * 6;
 
     this.mesh = this.buildMesh(role);
     this.mesh.position.copy(position);
@@ -92,6 +98,43 @@ export class NPC {
       const targetAngle = Math.atan2(toTarget.x, toTarget.z);
       this.mesh.rotation.y = targetAngle;
     }
+
+    // Petites bulles de dialogue aléatoires pour donner vie aux passants
+    this.talkCooldown -= delta;
+    if (this.talkCooldown <= 0) {
+      this.showSpeechBubble(PEDESTRIAN_LINES[Math.floor(Math.random() * PEDESTRIAN_LINES.length)]);
+      this.talkCooldown = 12 + Math.random() * 15;
+    }
+  }
+
+  showSpeechBubble(text) {
+    if (this.bubble) this.mesh.remove(this.bubble);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 220;
+    canvas.height = 60;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.fillRect(0, 0, 220, 60);
+    ctx.fillStyle = "#111";
+    ctx.font = "16px Arial";
+    ctx.textAlign = "center";
+    wrapText(ctx, text, 110, 26, 200, 18);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(1.4, 0.4, 1);
+    sprite.position.y = 2.3;
+    this.mesh.add(sprite);
+    this.bubble = sprite;
+
+    setTimeout(() => {
+      if (this.bubble === sprite) {
+        this.mesh.remove(sprite);
+        this.bubble = null;
+      }
+    }, 3200);
   }
 
   knockDown() {
@@ -99,6 +142,24 @@ export class NPC {
     this.knockedDown = true;
     this.knockedTimer = 3;
   }
+}
+
+function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
+  const words = text.split(" ");
+  let line = "";
+  let lines = [];
+  for (const word of words) {
+    const test = line + word + " ";
+    if (ctx.measureText(test).width > maxWidth && line !== "") {
+      lines.push(line);
+      line = word + " ";
+    } else {
+      line = test;
+    }
+  }
+  lines.push(line);
+  const startY = y - ((lines.length - 1) * lineHeight) / 2;
+  lines.forEach((l, i) => ctx.fillText(l.trim(), x, startY + i * lineHeight));
 }
 
 export function spawnNPCs(scene, worldSize, pedestrianCount) {

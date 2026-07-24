@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Vie Virtuelle — Monde Ouvert 3D</title>
+  <title>Vie Virtuelle — Une Vraie Vie, de la Naissance à la Mort</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
@@ -24,6 +24,7 @@
     <div id="top-bar">
       <div id="player-count">Joueurs connectés : 1</div>
       <div id="money-display">💰 0 €</div>
+      <div id="age-display">🎂 6 ans · Enfant</div>
       <div id="wanted-display"></div>
     </div>
 
@@ -35,7 +36,7 @@
     <div id="mission-banner" class="hidden"></div>
 
     <div id="controls-hint">
-      Z Q S D : marcher/conduire &nbsp;·&nbsp; E : interagir / monter-descendre &nbsp;·&nbsp; Souris : caméra &nbsp;·&nbsp; Molette : zoom
+      Z Q S D : marcher/conduire &nbsp;·&nbsp; E : interagir / monter-descendre &nbsp;·&nbsp; F : frapper &nbsp;·&nbsp; Souris : caméra &nbsp;·&nbsp; Molette : zoom
     </div>
 
     <div id="chat-box">
@@ -52,6 +53,15 @@
         <button id="shop-close-btn">✕</button>
       </div>
       <div id="shop-items"></div>
+    </div>
+  </div>
+
+  <!-- Modal fin de vie -->
+  <div id="death-modal" class="hidden">
+    <div class="death-box">
+      <h2>🕊️ Fin de vie</h2>
+      <p id="death-summary"></p>
+      <button id="death-restart-btn">Commencer une nouvelle vie</button>
     </div>
   </div>
 

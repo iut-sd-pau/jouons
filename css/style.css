@@ -106,7 +106,9 @@ html, body {
   position: absolute;
   top: 16px;
   left: 16px;
+  right: 190px;
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   align-items: center;
 }
@@ -124,6 +126,62 @@ html, body {
   color: #ffd60a;
   font-weight: 600;
 }
+
+#age-display {
+  color: #a78bfa;
+  font-weight: 600;
+}
+
+/* Écran de fin de vie */
+#death-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 8, 12, 0.85);
+}
+
+#death-modal.hidden { display: none; }
+
+.death-box {
+  background: rgba(20, 26, 38, 0.97);
+  border: 1px solid rgba(167, 139, 250, 0.3);
+  border-radius: 16px;
+  padding: 36px;
+  width: 360px;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+}
+
+.death-box h2 {
+  color: #eaf2ff;
+  font-size: 24px;
+  margin-bottom: 14px;
+}
+
+.death-box p {
+  color: #a3b3cc;
+  font-size: 14px;
+  line-height: 1.6;
+  margin-bottom: 22px;
+  white-space: pre-line;
+}
+
+#death-restart-btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(135deg, #a78bfa, #7c5ce0);
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#death-restart-btn:hover { opacity: 0.9; }
 
 #wanted-display {
   color: #ff4d4d;

@@ -13,6 +13,9 @@ export class PlayerData {
     this.wantedLevel = 0; // 0 à 5 étoiles
     this.inventory = [];
     this.ownedVehicleColor = "#e63946";
+    this.age = 6;
+    this.education = 0;
+    this.deathAge = null; // calculé au premier chargement si absent
     this.ref = db.ref("playerData/" + this.playerId);
     this.onLoaded = null;
     this._wantedDecayTimer = 0;
@@ -34,6 +37,9 @@ export class PlayerData {
       this.money = data.money ?? this.money;
       this.inventory = data.inventory ?? [];
       this.ownedVehicleColor = data.ownedVehicleColor ?? this.ownedVehicleColor;
+      this.age = data.age ?? this.age;
+      this.education = data.education ?? this.education;
+      this.deathAge = data.deathAge ?? null;
       // wantedLevel n'est jamais persisté volontairement (repart à 0 à chaque session)
     } else {
       this.save();
@@ -47,6 +53,9 @@ export class PlayerData {
       money: this.money,
       inventory: this.inventory,
       ownedVehicleColor: this.ownedVehicleColor,
+      age: this.age,
+      education: this.education,
+      deathAge: this.deathAge,
       lastSeen: firebase.database.ServerValue.TIMESTAMP
     });
   }

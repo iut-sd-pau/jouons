@@ -6,6 +6,7 @@ export class UI {
   constructor() {
     this.moneyEl = document.getElementById("money-display");
     this.wantedEl = document.getElementById("wanted-display");
+    this.ageEl = document.getElementById("age-display");
     this.promptEl = document.getElementById("interaction-prompt");
     this.missionEl = document.getElementById("mission-banner");
     this.shopModal = document.getElementById("shop-modal");
@@ -13,8 +14,26 @@ export class UI {
     this.shopItemsEl = document.getElementById("shop-items");
     this.minimapCanvas = document.getElementById("minimap-canvas");
     this.minimapCtx = this.minimapCanvas.getContext("2d");
+    this.deathModal = document.getElementById("death-modal");
+    this.deathSummaryEl = document.getElementById("death-summary");
+    this.deathRestartBtn = document.getElementById("death-restart-btn");
 
     this.shopCloseBtn.addEventListener("click", () => this.closeShop());
+  }
+
+  updateAge(age, stageLabel) {
+    this.ageEl.textContent = `🎂 ${age} ans · ${stageLabel}`;
+  }
+
+  showDeathScreen(summaryText, onRestart) {
+    this.deathSummaryEl.textContent = summaryText;
+    this.deathModal.classList.remove("hidden");
+    const handler = () => {
+      this.deathModal.classList.add("hidden");
+      this.deathRestartBtn.removeEventListener("click", handler);
+      onRestart();
+    };
+    this.deathRestartBtn.addEventListener("click", handler);
   }
 
   updateMoney(amount) {

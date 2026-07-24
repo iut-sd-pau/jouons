@@ -1,9 +1,13 @@
 import * as THREE from "three";
 import { Multiplayer } from "./multiplayer.js";
 import { PlayerData } from "./economy.js";
+import { Lifecycle } from "./lifecycle.js";
 import { spawnVehicles } from "./vehicles.js";
 import { spawnNPCs } from "./npc.js";
-import { buildWorld, buildMissionMarker, WORLD_SIZE, JOB_GIVER_POS, SHOP_POS, DELIVERY_DROPOFF_POS } from "./world.js";
+import {
+  buildWorld, buildMissionMarker, WORLD_SIZE,
+  JOB_GIVER_POS, SHOP_POS, DELIVERY_DROPOFF_POS, SCHOOL_POS, TAXI_STAND_POS
+} from "./world.js";
 import { UI } from "./ui.js";
 
 // ============================================================
@@ -14,17 +18,23 @@ let player;
 let otherPlayers = {};
 let multiplayer = null;
 let playerData = null;
+let lifecycle = null;
 let ui = null;
 
 let vehicles = [];
 let npcs = [];
-let currentVehicle = null; // véhicule occupé par MOI
-let nearestInteractable = null; // { type: 'vehicle'|'npc', ref }
+let streetlights = [];
+let currentVehicle = null;
+let nearestInteractable = null;
 
 let policeCar = null;
 let policeActive = false;
+let activeMission = null; // { type: 'delivery'|'taxi', markerMesh }
+let gamePaused = false;
 
-let activeMission = null; // { markerMesh }
+let sunLight, ambientLight;
+let dayTime = 0.3; // 0 = minuit, 0.25 = lever du jour, 0.5 = midi, 0.75 = coucher du soleil
+const DAY_LENGTH_SECONDS = 240; // durée d'un cycle jour/nuit complet
 
 const keys = {};
 let cameraYaw = 0;
@@ -32,9 +42,11 @@ let cameraPitch = 0.35;
 let cameraDistance = 7;
 const clock = new THREE.Clock();
 
-const MOVE_SPEED = 6;
+const BASE_MOVE_SPEED = 6;
 const INTERACT_RADIUS = 2.5;
 const HIT_SPEED_THRESHOLD = 6;
+const PUNCH_COOLDOWN = 0.8;
+let punchTimer = 0;
 
 const SHOP_ITEMS = [
   { id: "bleu", name: "Tenue Bleue", price: 100, color: "#4f7fff" },
@@ -67,12 +79,18 @@ async function startGame() {
   ui = new UI();
   playerData = new PlayerData(name);
   await playerData.load();
+  lifecycle = new Lifecycle(playerData);
+
   ui.updateMoney(playerData.money);
   ui.updateWanted(playerData.wantedLevel);
+  ui.updateAge(lifecycle.age, lifecycle.currentStage.label);
 
   initScene();
   initMultiplayer(name);
   animate();
+
+  ui.showMission(`🍼 Tu commences ta vie comme ${lifecycle.currentStage.label.toLowerCase()}, à ${lifecycle.age} ans.`);
+  setTimeout(() => ui.hideMission(), 4000);
 }
 
 // ============================================================
@@ -81,7 +99,7 @@ async function startGame() {
 function initScene() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x8fc7ff);
-  scene.fog = new THREE.Fog(0x8fc7ff, 30, 100);
+  scene.fog = new THREE.Fog(0x8fc7ff, 30, 110);
 
   camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
 
@@ -91,30 +109,29 @@ function initScene() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-  scene.add(ambient);
+  ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+  scene.add(ambientLight);
 
-  const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-  sun.position.set(20, 30, 10);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.left = -40;
-  sun.shadow.camera.right = 40;
-  sun.shadow.camera.top = 40;
-  sun.shadow.camera.bottom = -40;
-  scene.add(sun);
+  sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+  sunLight.castShadow = true;
+  sunLight.shadow.mapSize.set(2048, 2048);
+  sunLight.shadow.camera.left = -50;
+  sunLight.shadow.camera.right = 50;
+  sunLight.shadow.camera.top = 50;
+  sunLight.shadow.camera.bottom = -50;
+  scene.add(sunLight);
+  scene.add(sunLight.target);
 
-  buildWorld(scene);
+  const worldRefs = buildWorld(scene);
+  streetlights = worldRefs.streetlights;
   vehicles = spawnVehicles(scene);
-  npcs = spawnNPCs(scene, WORLD_SIZE, 10);
+  npcs = spawnNPCs(scene, WORLD_SIZE, 16);
 
-  // Voiture de police (invisible tant qu'aucun niveau de recherche)
   policeCar = buildPoliceCar();
   policeCar.visible = false;
   scene.add(policeCar);
 
-  // Joueur
-  player = createCharacter(playerData.ownedVehicleColor || 0x4f7fff);
+  player = createCharacter(playerData.ownedVehicleColor || 0x4f7fff, lifecycle.currentStage.scale);
   player.position.set(0, 0, 0);
   scene.add(player);
 
@@ -155,11 +172,10 @@ function initScene() {
 
 function onKeyDown(e) {
   keys[e.code] = true;
-  if (chatInputEl.dataset.active === "1") return;
+  if (chatInputEl.dataset.active === "1" || gamePaused) return;
 
-  if (e.code === "KeyE") {
-    handleInteraction();
-  }
+  if (e.code === "KeyE") handleInteraction();
+  if (e.code === "KeyF") handlePunch();
 }
 
 function buildPoliceCar() {
@@ -181,7 +197,7 @@ function buildPoliceCar() {
   return group;
 }
 
-function createCharacter(color) {
+function createCharacter(color, scale = 1) {
   const group = new THREE.Group();
   const bodyGeo = new THREE.CapsuleGeometry(0.4, 1, 4, 8);
   const bodyMat = new THREE.MeshStandardMaterial({ color });
@@ -197,6 +213,7 @@ function createCharacter(color) {
   head.castShadow = true;
   group.add(head);
 
+  group.scale.setScalar(scale);
   return group;
 }
 
@@ -279,19 +296,37 @@ function updatePlayerCount() {
 function handleInteraction() {
   if (!nearestInteractable) return;
 
-  if (nearestInteractable.type === "vehicle") {
-    enterVehicle(nearestInteractable.ref);
-  } else if (nearestInteractable.type === "exit_vehicle") {
-    exitVehicle();
-  } else if (nearestInteractable.type === "npc_job") {
-    startDeliveryMission();
-  } else if (nearestInteractable.type === "npc_shop") {
-    openShop();
+  switch (nearestInteractable.type) {
+    case "vehicle": enterVehicle(nearestInteractable.ref); break;
+    case "exit_vehicle": exitVehicle(); break;
+    case "npc_job": startDeliveryMission(); break;
+    case "npc_shop": openShop(); break;
+    case "school": studyAtSchool(); break;
+    case "taxi": startTaxiMission(); break;
+  }
+}
+
+function handlePunch() {
+  if (punchTimer > 0 || currentVehicle) return;
+  punchTimer = PUNCH_COOLDOWN;
+
+  for (const npc of npcs) {
+    if (npc.role !== "pedestrian" || npc.knockedDown) continue;
+    if (player.position.distanceTo(npc.mesh.position) < 1.8) {
+      npc.knockDown();
+      playerData.increaseWanted(1);
+      break;
+    }
   }
 }
 
 function enterVehicle(vehicle) {
   if (vehicle.occupied) return;
+  if (!lifecycle.canDrive()) {
+    ui.showMission(`🚫 Trop jeune pour conduire (il faut avoir 18 ans, tu as ${lifecycle.age} ans)`);
+    setTimeout(() => ui.hideMission(), 2500);
+    return;
+  }
   currentVehicle = vehicle;
   vehicle.occupied = true;
   vehicle.driverId = "me";
@@ -311,19 +346,58 @@ function exitVehicle() {
 
 function startDeliveryMission() {
   if (activeMission) return;
+  if (!lifecycle.canWork()) {
+    ui.showMission("🚫 Trop jeune pour travailler pour l'instant — va à l'école !");
+    setTimeout(() => ui.hideMission(), 2500);
+    return;
+  }
   ui.showMission("📦 Livraison en cours : rejoins le marqueur vert sur la carte !");
   const marker = buildMissionMarker(scene, DELIVERY_DROPOFF_POS, 0x06d6a0);
-  activeMission = { markerMesh: marker };
+  activeMission = { type: "delivery", markerMesh: marker };
 }
 
-function completeDeliveryMission() {
+function startTaxiMission() {
+  if (activeMission) return;
+  if (!lifecycle.canWork() || !lifecycle.canDrive()) {
+    ui.showMission("🚫 Il faut être adulte et savoir conduire pour faire le taxi");
+    setTimeout(() => ui.hideMission(), 2500);
+    return;
+  }
+  ui.showMission("🚕 Course de taxi : dépose ton client au marqueur orange, en voiture !");
+  const dropoff = new THREE.Vector3(-JOB_GIVER_POS.x - 10, 0, -JOB_GIVER_POS.z - 10);
+  const marker = buildMissionMarker(scene, dropoff, 0xfb923c);
+  activeMission = { type: "taxi", markerMesh: marker, dropoff };
+}
+
+function completeMission() {
   if (!activeMission) return;
   scene.remove(activeMission.markerMesh);
+  const mult = lifecycle.getIncomeMultiplier();
+
+  if (activeMission.type === "delivery") {
+    const reward = Math.round(150 * mult);
+    playerData.addMoney(reward);
+    ui.showMission(`✅ Livraison réussie ! +${reward} €`);
+  } else if (activeMission.type === "taxi") {
+    const reward = Math.round(250 * mult);
+    playerData.addMoney(reward);
+    ui.showMission(`✅ Course terminée ! +${reward} €`);
+  }
+
   activeMission = null;
-  playerData.addMoney(150);
   ui.updateMoney(playerData.money);
-  ui.showMission("✅ Livraison réussie ! +150 €");
   setTimeout(() => ui.hideMission(), 3000);
+}
+
+function studyAtSchool() {
+  if (lifecycle.age >= 18) {
+    ui.showMission("🎓 Tu as déjà fini tes études.");
+    setTimeout(() => ui.hideMission(), 2000);
+    return;
+  }
+  const gained = lifecycle.studyAtSchool();
+  ui.showMission(`📚 Tu étudies... +${gained} points d'éducation (total : ${lifecycle.education}/100)`);
+  setTimeout(() => ui.hideMission(), 2500);
 }
 
 function openShop() {
@@ -348,6 +422,82 @@ function recolorPlayer(hexColor) {
 }
 
 // ============================================================
+// CYCLE DE VIE
+// ============================================================
+function handleLifeEvent(event) {
+  if (event.type === "death") {
+    triggerDeath();
+  } else if (event.type === "stage_change") {
+    player.scale.setScalar(event.stage.scale);
+    ui.showMission(`🎉 Tu es maintenant ${event.stage.label.toLowerCase()} ! (${lifecycle.age} ans)`);
+    setTimeout(() => ui.hideMission(), 3500);
+  } else if (event.type === "birthday") {
+    const roll = Math.random();
+    if (roll < 0.25) {
+      const gift = 20 + Math.floor(Math.random() * 60);
+      playerData.addMoney(gift);
+      ui.updateMoney(playerData.money);
+      ui.showMission(`🎂 Joyeux anniversaire (${event.age} ans) ! Tu reçois ${gift} € en cadeau.`);
+    } else {
+      ui.showMission(`🎂 Joyeux anniversaire, tu as maintenant ${event.age} ans !`);
+    }
+    setTimeout(() => ui.hideMission(), 3000);
+  }
+}
+
+function triggerDeath() {
+  gamePaused = true;
+  if (currentVehicle) exitVehicle();
+
+  const summary =
+    `Tu as vécu jusqu'à ${lifecycle.age} ans.\n` +
+    `Argent accumulé : ${playerData.money} €\n` +
+    `Éducation atteinte : ${lifecycle.education}/100\n\n` +
+    `Un quart de ton argent sera transmis à ta prochaine vie.`;
+
+  ui.showDeathScreen(summary, () => {
+    const legacy = lifecycle.reincarnate();
+    player.scale.setScalar(lifecycle.currentStage.scale);
+    player.position.set(0, 0, 0);
+    ui.updateMoney(playerData.money);
+    ui.updateAge(lifecycle.age, lifecycle.currentStage.label);
+    ui.showMission(`✨ Nouvelle vie ! Tu hérites de ${legacy} € de ta vie précédente.`);
+    setTimeout(() => ui.hideMission(), 4000);
+    gamePaused = false;
+  });
+}
+
+// ============================================================
+// JOUR / NUIT
+// ============================================================
+function updateDayNightCycle(delta) {
+  dayTime = (dayTime + delta / DAY_LENGTH_SECONDS) % 1;
+
+  const angle = dayTime * Math.PI * 2;
+  const sunHeight = Math.sin(angle - Math.PI / 2);
+  const radius = 60;
+
+  sunLight.position.set(Math.cos(angle) * radius, Math.max(5, sunHeight * radius), 20);
+  sunLight.target.position.copy(player.position);
+
+  const isNight = sunHeight < -0.15;
+  const dayColor = new THREE.Color(0x8fc7ff);
+  const nightColor = new THREE.Color(0x0a1128);
+  const blend = THREE.MathUtils.clamp((sunHeight + 0.3) / 0.6, 0, 1);
+  const skyColor = nightColor.clone().lerp(dayColor, blend);
+
+  scene.background = skyColor;
+  scene.fog.color = skyColor;
+  sunLight.intensity = THREE.MathUtils.clamp(0.15 + blend * 1.1, 0.15, 1.25);
+  ambientLight.intensity = THREE.MathUtils.clamp(0.15 + blend * 0.5, 0.15, 0.6);
+
+  streetlights.forEach((sl) => {
+    sl.userData.pointLight.intensity = isNight ? 1.2 : 0;
+    sl.userData.bulb.material.color.set(isNight ? 0xfff2b3 : 0x555544);
+  });
+}
+
+// ============================================================
 // BOUCLE DE JEU
 // ============================================================
 let lastNetworkUpdate = 0;
@@ -356,31 +506,43 @@ function animate() {
   requestAnimationFrame(animate);
   const delta = Math.min(0.1, clock.getDelta());
 
-  if (currentVehicle) {
-    currentVehicle.update(delta, keys);
-  } else {
-    updatePlayerMovement(delta);
+  if (punchTimer > 0) punchTimer -= delta;
+
+  if (!gamePaused) {
+    const lifeEvent = lifecycle.update(delta);
+    if (lifeEvent) handleLifeEvent(lifeEvent);
+    ui.updateAge(lifecycle.age, lifecycle.currentStage.label);
+
+    if (currentVehicle) {
+      currentVehicle.update(delta, keys);
+    } else {
+      updatePlayerMovement(delta);
+    }
+
+    updateNPCs(delta);
+    updateVehiclePhysicsIdle(delta);
+    updateInteractionPrompt();
+    updateMissionProgress();
+    updateWantedAndPolice(delta);
+
+    playerData.updateWantedDecay(delta);
+    ui.updateWanted(playerData.wantedLevel);
   }
 
+  updateDayNightCycle(delta);
   updateCamera();
   interpolateOtherPlayers(delta);
-  updateNPCs(delta);
-  updateVehiclePhysicsIdle(delta);
-  updateInteractionPrompt();
-  updateMissionProgress();
-  updateWantedAndPolice(delta);
-
-  playerData.updateWantedDecay(delta);
-  ui.updateWanted(playerData.wantedLevel);
 
   const activePos = currentVehicle ? currentVehicle.mesh.position : player.position;
   const activeRotY = currentVehicle ? currentVehicle.mesh.rotation.y : player.rotation.y;
 
   const pois = [
     { x: JOB_GIVER_POS.x, z: JOB_GIVER_POS.z, color: "#ffd60a" },
-    { x: SHOP_POS.x, z: SHOP_POS.z, color: "#00b4d8" }
+    { x: SHOP_POS.x, z: SHOP_POS.z, color: "#00b4d8" },
+    { x: SCHOOL_POS.x, z: SCHOOL_POS.z, color: "#a78bfa" },
+    { x: TAXI_STAND_POS.x, z: TAXI_STAND_POS.z, color: "#fb923c" }
   ];
-  if (activeMission) pois.push({ x: DELIVERY_DROPOFF_POS.x, z: DELIVERY_DROPOFF_POS.z, color: "#06d6a0" });
+  if (activeMission) pois.push({ x: activeMission.markerMesh.position.x, z: activeMission.markerMesh.position.z, color: "#06d6a0" });
   ui.drawMinimap(activePos, activeRotY, otherPlayers, pois, WORLD_SIZE);
 
   lastNetworkUpdate += delta;
@@ -401,8 +563,9 @@ function updatePlayerMovement(delta) {
     const moveAngle = Math.atan2(strafe, forward) + cameraYaw;
     player.rotation.y = lerpAngle(player.rotation.y, moveAngle, 0.2);
 
+    const speed = BASE_MOVE_SPEED * lifecycle.currentStage.speedMult;
     const dir = new THREE.Vector3(Math.sin(moveAngle), 0, Math.cos(moveAngle));
-    player.position.addScaledVector(dir, MOVE_SPEED * delta);
+    player.position.addScaledVector(dir, speed * delta);
 
     const half = WORLD_SIZE / 2 - 1;
     player.position.x = Math.max(-half, Math.min(half, player.position.x));
@@ -439,7 +602,6 @@ function interpolateOtherPlayers(delta) {
 function updateNPCs(delta) {
   npcs.forEach((npc) => npc.update(delta, WORLD_SIZE));
 
-  // Détection de collision voiture <-> piéton (renverser quelqu'un)
   if (currentVehicle && Math.abs(currentVehicle.speed) > HIT_SPEED_THRESHOLD) {
     npcs.forEach((npc) => {
       if (npc.role !== "pedestrian" || npc.knockedDown) return;
@@ -468,23 +630,21 @@ function updateInteractionPrompt() {
     return;
   }
 
-  // Véhicule à proximité
   for (const v of vehicles) {
     if (v.occupied) continue;
     if (refPos.distanceTo(v.mesh.position) < INTERACT_RADIUS) {
       nearestInteractable = { type: "vehicle", ref: v };
-      ui.showPrompt("Appuie sur E pour monter dans le véhicule");
+      ui.showPrompt(lifecycle.canDrive() ? "Appuie sur E pour monter dans le véhicule" : "Trop jeune pour conduire");
       return;
     }
   }
 
-  // PNJ à proximité
   for (const npc of npcs) {
     if (npc.role === "pedestrian") continue;
     if (refPos.distanceTo(npc.mesh.position) < INTERACT_RADIUS) {
       if (npc.role === "job_giver") {
         nearestInteractable = { type: "npc_job" };
-        ui.showPrompt(activeMission ? "Livraison déjà en cours..." : "Appuie sur E pour prendre une mission de livraison");
+        ui.showPrompt(activeMission ? "Une mission est déjà en cours..." : "Appuie sur E pour une mission de livraison");
       } else if (npc.role === "shopkeeper") {
         nearestInteractable = { type: "npc_shop" };
         ui.showPrompt("Appuie sur E pour ouvrir la boutique");
@@ -493,14 +653,30 @@ function updateInteractionPrompt() {
     }
   }
 
+  if (refPos.distanceTo(SCHOOL_POS) < INTERACT_RADIUS + 1) {
+    nearestInteractable = { type: "school" };
+    ui.showPrompt(lifecycle.age >= 18 ? "Tu as fini tes études" : "Appuie sur E pour étudier");
+    return;
+  }
+
+  if (refPos.distanceTo(TAXI_STAND_POS) < INTERACT_RADIUS + 1) {
+    nearestInteractable = { type: "taxi" };
+    ui.showPrompt(activeMission ? "Une mission est déjà en cours..." : "Appuie sur E pour une course de taxi");
+    return;
+  }
+
   ui.hidePrompt();
 }
 
 function updateMissionProgress() {
   if (!activeMission) return;
   const refPos = currentVehicle ? currentVehicle.mesh.position : player.position;
-  if (refPos.distanceTo(DELIVERY_DROPOFF_POS) < 2.5) {
-    completeDeliveryMission();
+  const target = activeMission.type === "taxi" ? activeMission.dropoff : DELIVERY_DROPOFF_POS;
+
+  if (activeMission.type === "taxi" && !currentVehicle) return;
+
+  if (refPos.distanceTo(target) < 2.5) {
+    completeMission();
   }
 }
 
@@ -528,17 +704,15 @@ function updateWantedAndPolice(delta) {
 
     if (dist > 0.5) {
       toPlayer.normalize();
-      const chaseSpeed = 5 + wanted; // plus le niveau est élevé, plus la police est rapide
+      const chaseSpeed = 5 + wanted;
       policeCar.position.addScaledVector(toPlayer, chaseSpeed * delta);
       policeCar.rotation.y = Math.atan2(toPlayer.x, toPlayer.z);
     }
 
-    // Gyrophare
     policeCar.userData.flashTimer += delta;
     const on = Math.floor(policeCar.userData.flashTimer * 6) % 2 === 0;
     policeCar.userData.light.material.color.set(on ? 0xff0000 : 0x0000ff);
 
-    // Arrestation si la police rattrape le joueur
     if (dist < 2) {
       playerData.wantedLevel = 0;
       playerData.addMoney(-50);
