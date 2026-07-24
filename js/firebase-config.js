@@ -14,8 +14,7 @@ const firebaseConfig = {
   projectId: "jouons-ba9fe",
   storageBucket: "jouons-ba9fe.firebasestorage.app",
   messagingSenderId: "1003832351346",
-  appId: "1:1003832351346:web:6eb5550a066ca389c480eb",
-  measurementId: "G-EXYB9K44DF"
+  appId: "1:1003832351346:web:6eb5550a066ca389c480eb"
 };
 
 firebase.initializeApp(firebaseConfig);
